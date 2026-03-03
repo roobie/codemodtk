@@ -234,102 +234,6 @@ export class DenoLand implements RegistryUrl {
  * A cache for storing versions of packages in the JSR registry.
  * @type {Map<string, string[]>}
  */
-const JSR_CACHE: Map<string, string[]> = new Map<string, string[]>();
-
-/**
- * Represents the JSR registry.
- * @class
- * @implements {RegistryUrl}
- */
-export class Jsr implements RegistryUrl {
-	url: string;
-	parseRegex = /^jsr:(\/?@[^/]+\/[^@/]+|\/?[^@/]+)(?:@([^/]+))?(.*)/;
-
-	constructor(url: string) {
-		this.url = url;
-	}
-
-	/**
-	 * Extracts the package name from the URL.
-	 * @returns {string} - The name of the package.
-	 */
-	name(): string {
-		const [, name] = this.url.match(this.parseRegex)!;
-		return name;
-	}
-
-	/**
-	 * Retrieves all available versions of the package.
-	 * @returns {Promise<string[]>} - A promise that resolves to an array of versions.
-	 */
-	async all(): Promise<string[]> {
-		const name = this.name();
-		if (JSR_CACHE.has(name)) {
-			return JSR_CACHE.get(name)!;
-		}
-
-		try {
-			const json: VersionsJson = await (
-				await fetch(`https://jsr.io/${name}/meta.json`)
-			).json();
-			if (!json.versions) {
-				throw new Error(`versions.json for ${name} has incorrect format`);
-			}
-
-			const versions = Object.keys(json.versions).sort((vsrA, vsrB) =>
-				semver.rcompare(vsrA, vsrB),
-			);
-			JSR_CACHE.set(name, versions);
-			return versions;
-		} catch (err) {
-			console.error(`error getting versions for ${name}`);
-			throw err;
-		}
-	}
-
-	/**
-	 * Returns the URL at the specified version.
-	 * @param {string} version - The version to retrieve.
-	 * @returns {RegistryUrl} - The registry URL at the specified version.
-	 */
-	at(version: string): RegistryUrl {
-		const [, name, _, files] = this.url.match(this.parseRegex)!;
-		const url = `jsr:${name}@${version}${files}`;
-		return new Jsr(url);
-	}
-
-	/**
-	 * Retrieves the current version of the URL.
-	 * @returns {string} - The current version.
-	 */
-	version(): string {
-		const [, , version] = this.url.match(this.parseRegex)!;
-		if (version === null) {
-			throw Error(`Unable to find version in ${this.url}`);
-		}
-		return version.startsWith("^") ? version.slice(1) : version;
-	}
-
-	/**
-	 * Returns the files portion of the URL.
-	 * @returns {string} - The files path in the URL.
-	 */
-	files(): string {
-		const [, _, __, files] = this.url.match(this.parseRegex)!;
-		return `.${files ?? ""}`;
-	}
-
-	/**
-	 * Regular expression to validate the URL.
-	 * @type {RegExp}
-	 */
-	regexp = /jsr:(@[^/]+\/[^@/]+|[^@/]+)(?:@([^/"']+))?[^'"]/;
-}
-
-/**
- * A cache of DenoLand releases mapped by package name.
- * @type {Map<string, string[]>}
- */
 const DL_CACHE: Map<string, string[]> = new Map<string, string[]>();
 
 /**
@@ -969,7 +873,6 @@ export class NestLand implements RegistryUrl {
 }
 
 export const REGISTRIES = [
-	Jsr,
 	DenoLand,
 	UnpkgScope,
 	Unpkg,

@@ -5,10 +5,8 @@
 	"main": "mod.ts",
 	"exports": {
 		".": "./mod.ts",
-		"./pkg": "./src/update.lib.ts",
 		"./registry": "./src/registry.ts",
-		"./formatter": "./src/formatter.ts",
-		"./deno-json": "./src/denoJSON.ts"
+		"./formatter": "./src/formatter.ts"
 	},
 	"scripts": {
 		"build": "bunx tsc --project tsconfig.json --noEmit",

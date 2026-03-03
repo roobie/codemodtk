@@ -10,9 +10,7 @@ import {
 	type SourceFile,
 	StructureKind,
 } from "ts-morph";
-import type { DenoJSON } from "./denoJSON.ts";
 import { format } from "./formatter.ts";
-import { upgradeDeps as upgradeImportMapDeps } from "./update.lib.ts";
 
 /**
  * Represents a text file with its path and content.
@@ -178,43 +176,6 @@ export const json =
 		};
 	};
 
-/**
- * Creates a CodeModTarget for modifying Deno JSON files.
- * @template TContext The type of the CodeModContext.
- * @param {JsonPatcher<DenoJSON, TContext>} f - The JSON patcher function for Deno JSON files.
- * @returns {CodeModTarget<TContext>} A CodeModTarget object.
- */
-export const denoJSON = <TContext extends CodeModContext = CodeModContext>(
-	f: JsonPatcher<DenoJSON, TContext>,
-): CodeModTarget<TContext> => {
-	return {
-		options: { match: [/deno.json(c?)$/] },
-		apply: json(f),
-	};
-};
-
-/**
- * Creates a CodeModTarget for upgrading dependencies in Deno JSON files.
- * @template TContext The type of the CodeModContext.
- * @param {RegExp} [packagesToCheck] - A regular expression to match packages to check for updates.
- * @returns {CodeModTarget<TContext>} A CodeModTarget object.
- */
-export const upgradeDeps = <TContext extends CodeModContext = CodeModContext>(
-	packagesToCheck?: RegExp,
-	logs: boolean = false,
-): CodeModTarget<TContext> => {
-	return denoJSON(async (denoJSONFile) => {
-		const updatedDenoJSON = {
-			...denoJSONFile.content,
-			imports: denoJSONFile.content.imports ?? {},
-		};
-		await upgradeImportMapDeps(updatedDenoJSON, logs, packagesToCheck);
-		return {
-			path: denoJSONFile.path,
-			content: updatedDenoJSON,
-		};
-	});
-};
 
 /**
  * Creates a FilePatcher for TypeScript files.

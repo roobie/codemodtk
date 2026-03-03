@@ -1,29 +1,28 @@
-import { parse } from "@std/flags";
-import * as colors from "@std/fmt/colors";
-import { exists } from "@std/fs/exists";
-import { join } from "@std/path";
-import * as semver from "@std/semver";
+import * as colors from "kleur";
+import { promises as fs } from "fs";
+import path from "path";
+import * as semver from "semver";
 import type { DenoJSON } from "./denoJSON.ts";
 import { pkgInfo } from "./pkg.ts";
 import { lookup, REGISTRIES } from "./registry.ts";
 
 // map of `packageAlias` to `packageRepo`
 const PACKAGES_TO_CHECK =
-  /(@deco\/.*)|(apps)|(deco)|(\$live)|(deco-sites\/.*\/$)|(partytown)/;
+  /(@deco\/.*)|(apps)|(deco)|(\$live)|(deco-sites\/.*\/\$)|(partytown)/;
 
 const requiredMinVersion: Record<string, string> = {
   // "std/": "0.208.0",
 };
 
-const flags = parse(Deno.args, {
-  boolean: ["allow-pre"],
-});
 const denoJSONFileNames = ["deno.json", "deno.jsonc"];
-const getDenoJSONPath = async (cwd = Deno.cwd()) => {
+const getDenoJSONPath = async (cwd = process.cwd()) => {
   for (const importFileName of denoJSONFileNames) {
-    const importMapPath = join(cwd, importFileName);
-    if (await exists(importMapPath, { isFile: true })) {
-      return importMapPath;
+    const importMapPath = path.join(cwd, importFileName);
+    try {
+      const st = await fs.stat(importMapPath);
+      if (st.isFile()) return importMapPath;
+    } catch {
+      // continue
     }
   }
   return undefined;
@@ -35,28 +34,33 @@ async function* getImportMaps(
   if (!denoJSONPath) {
     throw new Error(`could not find deno.json definition in ${dir}`);
   }
-  const denoJSON = await Deno.readTextFile(denoJSONPath).then(JSON.parse);
+  const denoJSON = await fs.readFile(denoJSONPath, "utf8").then(JSON.parse);
   // inlined import_map inside deno.json
   if (denoJSON.imports) {
     yield [denoJSON, denoJSONPath];
   } else {
     const importMapFile = denoJSON?.importMap ?? "./import_map.json";
-    const importMapPath = join(dir, importMapFile.replace("./", ""));
-    if (await (exists(importMapPath))) {
-      yield [
-        await Deno.readTextFile(importMapPath).then(JSON.parse).catch(
-          () => ({
-            imports: {},
-          }),
-        ),
-        importMapPath,
-      ];
+    const importMapPath = path.join(dir, importMapFile.replace("./", ""));
+    try {
+      const st = await fs.stat(importMapPath);
+      if (st.isFile()) {
+        yield [
+          await fs.readFile(importMapPath, "utf8").then(JSON.parse).catch(
+            () => ({
+              imports: {},
+            }),
+          ),
+          importMapPath,
+        ];
+      }
+    } catch {
+      // ignore
     }
   }
 
   if (Array.isArray(denoJSON.workspace)) {
     for (const workspace of denoJSON.workspace as string[]) {
-      yield* getImportMaps(join(dir, workspace));
+      yield* getImportMaps(path.join(dir, workspace));
     }
   }
 }
@@ -85,7 +89,7 @@ export async function upgradeDeps(
       .map(async (pkg) => {
         const info = await pkgInfo(
           imports[pkg],
-          flags["allow-pre"],
+          process.argv.includes("--allow-pre"),
         );
 
         if (!info?.versions?.latest) return;
@@ -99,8 +103,8 @@ export async function upgradeDeps(
         } = info;
 
         if (
-          !semver.canParse(currentVersion) &&
-          !Deno.args.includes("force")
+          !semver.valid(currentVersion) &&
+          !process.argv.includes("force")
         ) {
           logs && logger(
             colors.yellow(
@@ -127,9 +131,9 @@ export async function upgradeDeps(
       const currentVersion = url?.version();
       if (
         !currentVersion ||
-        semver.lessThan(
-          semver.parse(currentVersion),
-          semver.parse(minVer),
+        semver.lt(
+          semver.coerce(currentVersion)!,
+          semver.coerce(minVer)!,
         )
       ) {
         logs && logger(
@@ -154,12 +158,12 @@ export async function upgradeDeps(
 
 export async function* updatedImportMap(
   logs: boolean = true,
-  cwd: string = Deno.cwd(),
+  cwd: string = process.cwd(),
 ): AsyncIterableIterator<[DenoJSON, string]> {
   for await (const [importMap, importMapPath] of getImportMaps(cwd)) {
     const logger = (...msg: unknown[]) =>
       console.info(
-        colors.gray(`${importMapPath.replaceAll(Deno.cwd(), ".")}:`),
+        colors.gray(`${importMapPath.replaceAll(process.cwd(), ".")}:`),
         ...msg,
       );
     const upgradeFound = await upgradeDeps(
@@ -176,12 +180,12 @@ export async function* updatedImportMap(
 }
 
 export async function update(
-  cwd: string = Deno.cwd(),
+  cwd: string = process.cwd(),
 ) {
   for await (
     const [importMap, importMapPath] of updatedImportMap(true, cwd)
   ) {
-    await Deno.writeTextFile(
+    await fs.writeFile(
       importMapPath,
       `${JSON.stringify(importMap, null, 2)}\n`,
     );

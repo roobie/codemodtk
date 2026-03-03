@@ -1,28 +1,18 @@
+import prettier from "prettier";
+
 /**
- * format content based on deno fmt
+ * format content using Prettier
  * @param content the string content
- * @returns the formatted content
+ * @returns the formatted content or the original content on error
  */
 export async function format(content: string): Promise<string> {
-  const fmt = new Deno.Command(Deno.execPath(), {
-    args: ["fmt", "-"],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-  });
-
-  const proc = fmt.spawn();
-
-  const raw = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(content));
-      controller.close();
-    },
-  });
-
-  await raw.pipeTo(proc.stdin);
-  const out = await proc.output();
-  await proc.status;
-
-  return new TextDecoder().decode(out.stdout);
+  try {
+    const config = await prettier.resolveConfig(process.cwd()).catch(() => null);
+    return prettier.format(content, {
+      parser: "typescript",
+      ...(config ?? {}),
+    });
+  } catch (_err) {
+    return content;
+  }
 }

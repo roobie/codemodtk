@@ -1,13 +1,15 @@
-import { brightGreen, brightRed, brightYellow, gray } from "@std/fmt/colors";
-import { ensureFile, exists, walk } from "@std/fs";
-import type { WalkOptions } from "@std/fs/walk";
-import * as diff from "npm:diff@5.1.0";
+import { green, red, yellow, gray } from "kleur";
+import { promises as fs } from "fs";
+import fsExtra from "fs-extra";
+import path from "path";
+import fg from "fast-glob";
+import * as diff from "diff";
 import {
   type ImportDeclarationStructure,
   Project,
   type SourceFile,
   StructureKind,
-} from "npm:ts-morph@^21.0";
+} from "ts-morph";
 import type { DenoJSON } from "./denoJSON.ts";
 import { format } from "./formatter.ts";
 import { upgradeDeps as upgradeImportMapDeps } from "./update.lib.ts";
@@ -84,7 +86,7 @@ export interface CodeModContext {
     ensureFile: (path: string) => Promise<void>;
     writeTextFile: (path: string, content: string) => Promise<void>;
     readTextFile: (path: string) => Promise<string>;
-    walk: typeof walk;
+    walk: (cwd: string, options: WalkOptions) => AsyncIterableIterator<{ path: string; isFile: boolean }>;
   };
 }
 
@@ -160,20 +162,20 @@ export const json = <
   TOut = TIn,
   TContext extends CodeModContext = CodeModContext,
 >(f: JsonPatcher<TIn, TContext, TOut>): FilePatcher<TContext> =>
-async ({ path, content }, ctx) => {
-  const result = await f({
-    path,
-    content: JSON.parse(content),
-  }, ctx);
+  async ({ path, content }, ctx) => {
+    const result = await f({
+      path,
+      content: JSON.parse(content),
+    }, ctx);
 
-  if ("deleted" in result) {
-    return result;
-  }
-  return {
-    path: result.path,
-    content: `${JSON.stringify(result.content, null, 2)}\n`,
+    if ("deleted" in result) {
+      return result;
+    }
+    return {
+      path: result.path,
+      content: `${JSON.stringify(result.content, null, 2)}\n`,
+    };
   };
-};
 
 /**
  * Creates a CodeModTarget for modifying Deno JSON files.
@@ -221,25 +223,25 @@ export const upgradeDeps = <
 export const ts = <TContext extends CodeModContext = CodeModContext>(
   f: TsPatcher<TContext>,
 ): FilePatcher<TContext> =>
-async (txt, ctx) => {
-  const project = new Project();
-  const sourceFile = project.addSourceFileAtPath(txt.path);
-  const prev = sourceFile.print();
-  const out = await f({ content: sourceFile, path: txt.path }, ctx);
-  if ("deleted" in out) {
-    return out;
-  }
-  if (prev === out.content.print()) {
+  async (txt, ctx) => {
+    const project = new Project();
+    const sourceFile = project.addSourceFileAtPath(txt.path);
+    const prev = sourceFile.print();
+    const out = await f({ content: sourceFile, path: txt.path }, ctx);
+    if ("deleted" in out) {
+      return out;
+    }
+    if (prev === out.content.print()) {
+      return {
+        path: out.path,
+        content: txt.content,
+      };
+    }
     return {
       path: out.path,
-      content: txt.content,
+      content: out.content.print(),
     };
-  }
-  return {
-    path: out.path,
-    content: out.content.print(),
   };
-};
 
 /**
  * A map of symbols and their module specifiers.
@@ -377,104 +379,50 @@ const applyPatch = async (p: FileMod, ctx: CodeModContext): Promise<void> => {
   }
 };
 
-/**
- * Applies a code modification.
- * @param {CodeMod} mod - The code modification.
- * @returns {Promise<void>} A promise that resolves when the code modification is applied.
- */
-const applyCodeMod = async (
-  { patches, name, description, ctx, yPrompt }: CodeMod,
-) => {
-  const yesToAll = !yPrompt || Boolean(Deno.args.find((x) => x === "--y"));
-  for (const patch of patches) {
-    if (isDelete(patch)) {
-      console.log(`🚨 ${brightRed(patch.from.path)} will be deleted.`);
-      continue;
-    }
-
-    const { content, path: fromPath } = isPatch(patch)
-      ? patch.from
-      : { content: "", path: "" };
-
-    if (content === patch.to.content && fromPath === patch.to.path) {
-      continue;
-    }
-
-    const prettyPath = fromPath.replaceAll(ctx.fs.cwd(), ".");
-
-    const linesDiff = diff.diffLines(
-      content,
-      await format(patch.to.content).then((formatted) =>
-        formatted ?? patch.to.content
-      ).catch(() => patch.to.content),
-    );
-
-    if (linesDiff.length === 1 && fromPath === patch.to.path) {
-      const change = linesDiff[0].added ? "(new file)" : undefined;
-      if (change) {
-        console.log(gray(`✅ ${prettyPath} ${change}`));
-      }
-      continue;
-    }
-
-    console.log(
-      `⚠️  ${brightYellow(prettyPath)} -> ${
-        brightYellow(patch.to.path.replaceAll(ctx.fs.cwd(), "."))
-      }`,
-    );
-
-    if (yesToAll) continue;
-
-    for (const { added, removed, value } of linesDiff) {
-      const color = added ? brightGreen : removed ? brightRed : gray;
-      console.log(color(value));
-    }
+async function* defaultWalk(cwd: string, options: WalkOptions) {
+  const entries = await fg(["**/*"], { cwd, dot: true, absolute: true });
+  for (const entry of entries) {
+    const rel = path.resolve(entry);
+    const skip = options?.skip?.some((r) => r.test(rel));
+    if (skip) continue;
+    const match = options?.match?.some((r) => r.test(rel));
+    if (options?.match && !match) continue;
+    const stat = await fs.stat(entry).catch(() => null);
+    const isFile = stat ? stat.isFile() : false;
+    if (!options?.includeDirs && !isFile) continue;
+    yield { path: rel, isFile };
   }
+}
 
-  description && console.log(`These changes ${description}`);
-  const ok = yesToAll || confirm("Do you want to proceed?");
-  if (!ok) return;
-
-  name && console.log(`Applying patch ${name}`);
-  for (const patch of patches) {
-    await applyPatch(patch, ctx);
-  }
+type WalkOptions = {
+  match?: RegExp[];
+  skip?: RegExp[];
+  includeDirs?: boolean;
 };
 
-/**
- * Represents a target for applying a code modification.
- * @template TContext The type of the CodeModContext.
- */
-export interface CodeModTarget<
-  TContext extends CodeModContext = CodeModContext,
-> {
-  options: WalkOptions;
-  apply: FilePatcher<TContext>;
-}
-
-/**
- * Represents options for applying code modifications.
- * @template TContext The type of the CodeModContext.
- */
-export interface CodeModOptions<
-  TContext extends DefaultCodeModContext = DefaultCodeModContext,
-> {
-  name?: string;
-  description?: string;
-  context?: TContext;
-  targets: CodeModTarget<TContext & CodeModContext>[];
-  // if it should prompt user a confirmation prompt.
-  yPrompt?: boolean;
-}
-
 const DEFAULT_FS: CodeModContext["fs"] = {
-  cwd: () => Deno.cwd(),
-  remove: Deno.remove,
-  ensureFile: ensureFile,
-  writeTextFile: Deno.writeTextFile,
-  readTextFile: Deno.readTextFile,
-  walk: walk,
-  exists: exists,
+  cwd: () => process.cwd(),
+  remove: async (p: string) => {
+    await fs.rm(p, { recursive: true, force: true }).catch(() => {});
+  },
+  ensureFile: async (p: string) => {
+    await fsExtra.ensureFile(p);
+  },
+  writeTextFile: async (p: string, content: string) => {
+    await fs.writeFile(p, content, "utf8");
+  },
+  readTextFile: async (p: string) => {
+    return fs.readFile(p, "utf8");
+  },
+  walk: defaultWalk,
+  exists: async (p: string) => {
+    try {
+      await fs.stat(p);
+      return true;
+    } catch {
+      return false;
+    }
+  },
 };
 
 /**
@@ -512,7 +460,7 @@ export const codeMod = async <
   };
 
   for (const target of targets) {
-    for await (const file of ctx.fs.walk(ctx.fs.cwd(), target.options)) {
+    for await (const file of ctx.fs.walk(ctx.fs.cwd(), target.options as WalkOptions)) {
       if (file.isFile) {
         const from = {
           content: fsNext[file.path] ??
@@ -536,3 +484,105 @@ export const codeMod = async <
   }
   await applyCodeMod({ name, description, patches, ctx, yPrompt });
 };
+
+const promptConfirm = async (question: string) => {
+  const readline = await import("readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise<boolean>((resolve) => {
+    rl.question(`${question} (y/N) `, (ans: string) => {
+      rl.close();
+      resolve(ans.trim().toLowerCase().startsWith("y"));
+    });
+  });
+};
+
+/**
+ * Applies a code modification.
+ * @param {CodeMod} mod - The code modification.
+ * @returns {Promise<void>} A promise that resolves when the code modification is applied.
+ */
+const applyCodeMod = async (
+  { patches, name, description, ctx, yPrompt }: CodeMod,
+) => {
+  const args = process.argv.slice(2);
+  const yesToAll = !yPrompt || Boolean(args.find((x) => x === "--y"));
+  for (const patch of patches) {
+    if (isDelete(patch)) {
+      console.log(`🚨 ${red(patch.from.path)} will be deleted.`);
+      continue;
+    }
+
+    const { content, path: fromPath } = isPatch(patch)
+      ? patch.from
+      : { content: "", path: "" };
+
+    if (content === patch.to.content && fromPath === patch.to.path) {
+      continue;
+    }
+
+    const prettyPath = fromPath.replaceAll(ctx.fs.cwd(), ".");
+
+    const linesDiff = diff.diffLines(
+      content,
+      await format(patch.to.content).then((formatted) =>
+        formatted ?? patch.to.content
+      ).catch(() => patch.to.content),
+    );
+
+    if (linesDiff.length === 1 && fromPath === patch.to.path) {
+      const change = linesDiff[0].added ? "(new file)" : undefined;
+      if (change) {
+        console.log(gray(`✅ ${prettyPath} ${change}`));
+      }
+      continue;
+    }
+
+    console.log(
+      `⚠️  ${yellow(prettyPath)} -> ${
+        yellow(patch.to.path.replaceAll(ctx.fs.cwd(), "."))
+      }`,
+    );
+
+    if (yesToAll) continue;
+
+    for (const { added, removed, value } of linesDiff) {
+      const color = added ? green : removed ? red : gray;
+      console.log(color(value));
+    }
+  }
+
+  description && console.log(`These changes ${description}`);
+  const ok = yesToAll || await promptConfirm("Do you want to proceed?");
+  if (!ok) return;
+
+  name && console.log(`Applying patch ${name}`);
+  for (const patch of patches) {
+    await applyPatch(patch, ctx);
+  }
+};
+
+/**
+ * Represents a target for applying a code modification.
+ * @template TContext The type of the CodeModContext.
+ */
+export interface CodeModTarget<
+  TContext extends CodeModContext = CodeModContext,
+> {
+  options: WalkOptions;
+  apply: FilePatcher<TContext>;
+}
+
+/**
+ * Represents options for applying code modifications.
+ * @template TContext The type of the CodeModContext.
+ */
+export interface CodeModOptions<
+  TContext extends DefaultCodeModContext = DefaultCodeModContext,
+> {
+  name?: string;
+  description?: string;
+  context?: TContext;
+  targets: CodeModTarget<TContext & CodeModContext>[];
+  // if it should prompt user a confirmation prompt.
+  yPrompt?: boolean;
+}

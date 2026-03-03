@@ -1,4 +1,4 @@
-import * as semver from "@std/semver";
+import semver from "semver";
 import { lookup, REGISTRIES, type RegistryUrl } from "./registry.ts";
 
 export interface PackageInfo {

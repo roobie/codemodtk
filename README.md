@@ -13,8 +13,8 @@ Importing
 - From the published package (when installed):
   import { codeMod, rewriteImports, json } from "@roobie/codemodtk";
 
-- From source (when developing locally) using the tsconfig path alias:
-  import { codeMod, rewriteImports, json } from "@/codemod";
+- (Alternative for local development) From source using the tsconfig path alias:
+  import { codeMod, rewriteImports, json } from "@roobie/codemodtk";
 
 1) JSON patcher
 
@@ -24,7 +24,7 @@ modified JSON object. The wrapper will stringify with 2-space indentation.
 Example:
 
 ```ts
-import { json } from "@/codemod";
+import { json } from "@roobie/codemodtk";
 
 const patcher = json(async (jf) => {
   // jf.content is the parsed JSON object
@@ -44,7 +44,7 @@ The rewriteImports(symbolMap) helper produces a FilePatcher that uses
 Example:
 
 ```ts
-import { rewriteImports } from "@/codemod";
+import { rewriteImports } from "@roobie/codemodtk";
 
 const symbolMap = {
   "old-module": {
@@ -63,7 +63,7 @@ wrapper to write a TsPatcher that receives a ts-morph SourceFile.
 Example:
 
 ```ts
-import { ts } from "@/codemod";
+import { ts } from "@roobie/codemodtk";
 
 const addExport = ts(async ({ content: sourceFile }) => {
   sourceFile.addFunction({ name: "hello", isExported: true, bodyText: 'console.log("hi")' });
@@ -80,7 +80,7 @@ for testing.
 Example (simple text replace across files):
 
 ```ts
-import { codeMod } from "@/codemod";
+import { codeMod } from "@roobie/codemodtk";
 
 const replaceFooWithBar = {
   options: { match: [/\.ts$/], skip: [/node_modules/], includeDirs: false },
@@ -102,7 +102,3 @@ Contributing
 
 - Run `bunx biome check .` and `bunx tsc --noEmit` before committing.
 - Add tests in `tests/` for new features or regressions.
-
-License
-
-MIT

@@ -1,5 +1,5 @@
 {
-  "name": "@deco/codemod-toolkit",
+  "name": "@roobie/codemodtk",
   "version": "0.3.4",
   "type": "module",
   "main": "mod.ts",
@@ -11,20 +11,20 @@
     "./deno-json": "./src/denoJSON.ts"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json --noEmit",
-    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx}\" mod.ts",
-    "lint": "eslint --ext .ts src || true",
+    "build": "bunx tsc --project tsconfig.json --noEmit",
+    "format": "bunx biome format",
+    "lint": "bunx biome check || true",
     "test": "bun test",
-    "check": "tsc --noEmit"
+    "check": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "ts-morph": "^21.0.0",
+    "@biomejs/biome": "^2.4.5",
     "diff": "^5.1.0",
-    "semver": "^7.5.4",
-    "kleur": "^4.1.5",
     "fast-glob": "^3.2.12",
     "fs-extra": "^11.1.1",
-    "prettier": "^3.0.0"
+    "kleur": "^4.1.5",
+    "semver": "^7.5.4",
+    "ts-morph": "^21.0.0"
   },
   "devDependencies": {
     "typescript": "^5.4.2",

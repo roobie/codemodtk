@@ -71,7 +71,12 @@ async function listFiles(dir: string): Promise<string[]> {
 					isFile: boolean;
 					isDirectory: boolean;
 				}> = [];
-				for await (const e of await Bun.readDir(dir)) res.push(e as any);
+				for await (const e of (await Bun.readDir(dir)) as AsyncIterable<{
+					name: string;
+					isFile: boolean;
+					isDirectory: boolean;
+				}>)
+					res.push(e);
 				return res;
 			})()
 		: []) {
@@ -117,7 +122,7 @@ if (mode === "text" || mode === "regex") {
 		const res =
 			mode === "text"
 				? replaceAllText(src, a, b)
-				: replaceAllRegex(src, re!, b);
+				: replaceAllRegex(src, re as RegExp, b);
 
 		if (res.changed) {
 			totalFiles++;

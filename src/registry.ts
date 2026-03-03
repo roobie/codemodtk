@@ -1,8 +1,6 @@
 // copied from https://deno.land/x/udd@0.8.2
 // under MIT License.
 
-import * as semver from "semver";
-
 /**
  * A constructor type for creating a RegistryUrl instance.
  * @typedef {new (url: string) => RegistryUrl} RegistryCtor
@@ -137,7 +135,8 @@ async function githubReleases(
 ): Promise<string[]> {
 	const cacheKey = `${owner}/${repo}`;
 	if (cache.has(cacheKey)) {
-		return cache.get(cacheKey)!;
+		const v = cache.get(cacheKey);
+		if (v !== undefined) return v;
 	}
 	const versions = await githubDownloadReleases(owner, repo);
 	if (versions.length === 10) {
@@ -172,9 +171,9 @@ export class DenoLand implements RegistryUrl {
 	 * @returns {string} - The name of the package.
 	 */
 	name(): string {
-		const [, stdGroup, xGroup] = this.url.match(
-			/deno\.land\/(?:(std)|x\/([^/@]*))/,
-		)!;
+		const m = this.url.match(/deno\.land\/(?:(std)|x\/([^/@]*))/);
+		if (!m) throw new Error(`Unable to parse deno.land url: ${this.url}`);
+		const [, stdGroup, xGroup] = m;
 		return stdGroup ?? xGroup;
 	}
 
@@ -185,7 +184,8 @@ export class DenoLand implements RegistryUrl {
 	async all(): Promise<string[]> {
 		const name = this.name();
 		if (DL_CACHE.has(name)) {
-			return DL_CACHE.get(name)!;
+			const v = DL_CACHE.get(name);
+			if (v !== undefined) return v;
 		}
 
 		try {
@@ -260,7 +260,9 @@ export class Npm implements RegistryUrl {
 	 * @returns {string} - The name of the package.
 	 */
 	name(): string {
-		const [, name] = this.url.match(this.parseRegex)!;
+		const m = this.url.match(this.parseRegex);
+		if (!m) throw new Error(`Unable to parse npm url: ${this.url}`);
+		const [, name] = m;
 		return name;
 	}
 
@@ -271,7 +273,8 @@ export class Npm implements RegistryUrl {
 	async all(): Promise<string[]> {
 		const name = this.name();
 		if (NPM_CACHE.has(name)) {
-			return NPM_CACHE.get(name)!;
+			const v = NPM_CACHE.get(name);
+			if (v !== undefined) return v;
 		}
 
 		try {
@@ -297,7 +300,9 @@ export class Npm implements RegistryUrl {
 	 * @returns {RegistryUrl} - The registry URL at the specified version.
 	 */
 	at(version: string): RegistryUrl {
-		const [, name, _, files] = this.url.match(this.parseRegex)!;
+		const m = this.url.match(this.parseRegex);
+		if (!m) throw new Error(`Unable to parse npm url: ${this.url}`);
+		const [, name, _, files] = m;
 		const url = `npm:${name}@${version}${files}`;
 		return new Npm(url);
 	}
@@ -307,8 +312,10 @@ export class Npm implements RegistryUrl {
 	 * @returns {string} - The current version.
 	 */
 	version(): string {
-		const [, , version] = this.url.match(this.parseRegex)!;
-		if (version === null) {
+		const m = this.url.match(this.parseRegex);
+		if (!m) throw Error(`Unable to parse npm url: ${this.url}`);
+		const [, , version] = m;
+		if (version === undefined) {
 			throw Error(`Unable to find version in ${this.url}`);
 		}
 		return version;
@@ -773,7 +780,8 @@ async function gitlabReleases(
 ): Promise<string[]> {
 	const cacheKey = `${owner}/${repo}`;
 	if (cache.has(cacheKey)) {
-		return cache.get(cacheKey)!;
+		const v = cache.get(cacheKey);
+		if (v !== undefined) return v;
 	}
 	// to roughly match GitHub above (5 pages, 10 releases each), we'll
 	// limit to 3 pages, 20 releases each
@@ -832,7 +840,8 @@ async function nestlandReleases(
 	cache: Map<string, string[]> = NL_CACHE,
 ): Promise<string[]> {
 	if (cache.has(repo)) {
-		return cache.get(repo)!;
+		const v = cache.get(repo);
+		if (v !== undefined) return v;
 	}
 
 	const url = `https://x.nest.land/api/package/${repo}`;

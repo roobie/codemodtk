@@ -176,7 +176,6 @@ export const json =
 		};
 	};
 
-
 /**
  * Creates a FilePatcher for TypeScript files.
  * @template TContext The type of the CodeModContext.

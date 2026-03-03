@@ -6,6 +6,9 @@ provides composable "file patchers" for text, JSON, and TypeScript sources,
 plus a lightweight orchestration API (`codeMod`) to apply patches across a
 project.
 
+Important: this library is Bun-only. It requires the Bun runtime (and uses
+Bun.glob for file enumeration). It is not intended to run under Node/Deno.
+
 The examples below show representative usage patterns.
 
 Importing

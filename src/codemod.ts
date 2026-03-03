@@ -341,33 +341,17 @@ const applyPatch = async (p: FileMod, ctx: CodeModContext): Promise<void> => {
 };
 
 async function* defaultWalk(cwd: string, options: WalkOptions) {
-	// Prefer Bun.glob when available for native speed; otherwise fall back to
-	// a recursive readdir-based walk implementation (no fast-glob dependency).
-	let entries: string[] = [];
-	const maybeBun = globalThis as unknown as { Bun?: { glob?: unknown } };
-	if (maybeBun.Bun && typeof maybeBun.Bun?.glob === "function") {
-		entries = (maybeBun.Bun?.glob("**/*", { cwd, dot: true, absolute: true }) as string[]) || [];
-	} else {
-		// recursive readdir
-		async function walkDir(dir: string) {
-			let items: Array<{ name: string; isDirectory: () => boolean }>; // minimal Dirent-like shape
-			try {
-				items = (await fs.readdir(dir, { withFileTypes: true })) as unknown as Array<{ name: string; isDirectory: () => boolean }>;
-			} catch {
-				return;
-			}
-			for (const it of items) {
-				const full = path.join(dir, it.name);
-				if (it.isDirectory()) {
-					await walkDir(full);
-				} else {
-					entries.push(full);
-				}
-			}
+	// Strict Bun-only: use Bun.glob (native) to enumerate files.
+	const entries = (
+		Bun as unknown as {
+			glob: (
+				pattern: string,
+				opts: { cwd: string; dot: boolean; absolute: boolean },
+			) => string[];
 		}
-		await walkDir(cwd);
-	}
+	).glob("**/*", { cwd, dot: true, absolute: true });
 
+	// Normalize order for deterministic iteration
 	entries.sort();
 	for (const entry of entries) {
 		const rel = path.resolve(entry);

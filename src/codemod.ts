@@ -2,11 +2,11 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import * as diff from "diff";
 
-import fsExtra from "fs-extra";
 import kleur from "kleur";
 
 const { gray, green, red, yellow } = kleur;
 
+import { Glob } from "bun";
 import {
 	type ImportDeclarationStructure,
 	Project,
@@ -341,20 +341,17 @@ const applyPatch = async (p: FileMod, ctx: CodeModContext): Promise<void> => {
 };
 
 async function* defaultWalk(cwd: string, options: WalkOptions) {
-	// Strict Bun-only: use Bun.glob (native) to enumerate files.
-	const entries = (
-		Bun as unknown as {
-			glob: (
-				pattern: string,
-				opts: { cwd: string; dot: boolean; absolute: boolean },
-			) => string[];
-		}
-	).glob("**/*", { cwd, dot: true, absolute: true });
+	// Strict Bun-only: use Bun.Glob (native) to enumerate files.
+	const entries: string[] = [];
+	const glob = new Glob("**/*");
+	for await (const entry of glob.scan(cwd)) {
+		entries.push(path.resolve(cwd, entry));
+	}
 
 	// Normalize order for deterministic iteration
 	entries.sort();
 	for (const entry of entries) {
-		const rel = path.resolve(entry);
+		const rel = entry;
 		const skip = options?.skip?.some((r) => r.test(rel));
 		if (skip) continue;
 		const match = options?.match?.some((r) => r.test(rel));
@@ -378,7 +375,16 @@ const DEFAULT_FS: CodeModContext["fs"] = {
 		await fs.rm(p, { recursive: true, force: true }).catch(() => {});
 	},
 	ensureFile: async (p: string) => {
-		await fsExtra.ensureFile(p);
+		// Ensure parent directory exists
+		const dir = path.dirname(p);
+		await fs.mkdir(dir, { recursive: true }).catch(() => {});
+		// Create the file if it doesn't exist (open with 'a' creates it)
+		try {
+			const handle = await fs.open(p, "a");
+			await handle.close();
+		} catch {
+			// ignore errors
+		}
 	},
 	writeTextFile: async (p: string, content: string) => {
 		await fs.writeFile(p, content, "utf8");

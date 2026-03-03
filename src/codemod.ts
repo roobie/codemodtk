@@ -3,7 +3,10 @@ import path from "node:path";
 import * as diff from "diff";
 import fg from "fast-glob";
 import fsExtra from "fs-extra";
-import { gray, green, red, yellow } from "kleur";
+import kleur from "kleur";
+
+const { gray, green, red, yellow } = kleur;
+
 import {
 	type ImportDeclarationStructure,
 	Project,
